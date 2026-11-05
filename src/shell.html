@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#2b5b46">
+  <meta name="description" content="长沙出发的广西自驾路书：高速30天、国省道42天，逐日行程、补能夜宿、雨天替代与出发日期换算。">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>南行手记 · 广西自驾路书</title>
+  <style>
+    :root{color-scheme:light dark;background:light-dark(#ecefe7,#111b17);color:light-dark(#243c32,#eef2e8)}
+    html{scroll-behavior:smooth}body{margin:0;padding:20px 12px 32px;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+    .cursor-interaction{cursor:pointer}a{touch-action:manipulation}
+    @media(max-width:450px){body{padding:8px 6px 20px}}
+    @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  </style>
+  <script>
+    (()=>{
+      const key='guangxi-roadbook:v1';
+      let state=null;
+      try{state=JSON.parse(localStorage.getItem(key)||'null');}catch{}
+      window.openai={
+        widgetState:state,
+        setWidgetState(next){
+          this.widgetState=next;
+          try{localStorage.setItem(key,JSON.stringify(next));return Promise.resolve();}
+          catch(error){return Promise.reject(error);}
+        }
+      };
+      window.addEventListener('storage',event=>{
+        if(event.key!==key)return;
+        try{
+          window.openai.widgetState=JSON.parse(event.newValue||'null');
+          window.dispatchEvent(new CustomEvent('openai:set_globals',{detail:{globals:{widgetState:window.openai.widgetState}}}));
+        }catch{}
+      });
+    })();
+  </script>
+</head>
+<body>
+<!--ROADBOOK_APP-->
+<noscript><p>请启用浏览器JavaScript查看行程，或打开<a href="./guide/daily-plan.md">完整逐日文字版</a>。</p></noscript>
+</body>
+</html>
