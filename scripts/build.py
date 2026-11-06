@@ -1,11 +1,98 @@
-"""Build a self-contained static page with Python 3; no dependencies."""
+"""Generate the self-contained H5 and both guides from one structured dataset."""
 from pathlib import Path
+import json
 
-root = Path(__file__).resolve().parents[1]
-shell = (root / 'src/shell.html').read_text(encoding='utf-8')
-app = (root / 'src/roadbook.html').read_text(encoding='utf-8')
-assert shell.count('<!--ROADBOOK_APP-->') == 1
-assert '__GX_DATA__' not in app
-output = shell.replace('<!--ROADBOOK_APP-->', app)
-(root / 'index.html').write_text(output, encoding='utf-8')
-print('Built index.html:', len(output.encode('utf-8')), 'bytes')
+root=Path(__file__).resolve().parents[1]
+data=json.loads((root/'data/roadbook.json').read_text())
+shell=(root/'src/shell.html').read_text()
+for marker,path in [('/*__STYLE__*/','style.css'),('/*__ENGINE__*/','engine.js'),('/*__APP__*/','app.js')]:
+    assert shell.count(marker)==1
+    shell=shell.replace(marker,(root/'src'/path).read_text())
+shell=shell.replace('__GX_DATA__',json.dumps(data,ensure_ascii=False,separators=(',',':')).replace('<','\\u003c'))
+(root/'index.html').write_text(shell)
+
+names={'high':'高速优先','local':'不走高速'}
+def total(days,key):return [round(sum(d[key][i] for d in days),1) for i in range(2)]
+def interval(nums):return '—'.join(f'{v:g}' for v in nums)
+lines=['# 广西自驾逐日参考行程',f"整理日期 {data['updated']}，北京时间。长沙出发，一人，2022 款深蓝 SL03 增程版，反馈纯电实际续航约 160 公里。",'这是一份可增减的参考顺序，不是固定出发日或未来天气承诺。网页版可设置出发日期、记录实际落脚地、加住、交换相邻同城内容、删去同城可选日。已保存的调整可从网页下载为文字版。','里程和纯驾驶时间是规划估算，未实时算路，车时不含充电、吃饭、游玩、堵车。停车点为待核实候选，不代表已获准车宿。']
+for mode,days in data['routes'].items():
+    lines += [f"## {names[mode]} · 原始 {len(days)} 天",f"逐日汇总约 {interval(total(days,'km'))} 公里、{interval(total(days,'hours'))} 小时纯驾驶。酒店基准 {sum(d['hotel'] for d in days)} 晚。"]
+    for d in days:
+        lines += [f"### 参考 D{d['n']} · {d['title']}",f"类型：{d['kind']}；{'同城可选，可删除' if d['optional'] else '保留路线连接'}。{d['why']}",f"路线：{d['fromCity']} → {d['toCity']}。约 {interval(d['km'])} 公里 / {interval(d['hours'])} 小时。",f"上午：{d['am']}",f"下午：{d['pm']}",f"夜间：{'回长沙家中' if d['n']==len(days) else d['toCity']+' · '+('酒店' if d['hotel'] else '车宿候选，需获准')}。{d['night']}",f"天气不好：{d['rain']}"]
+        if len(d['stops'])>1:
+            lines += ['可记录的落脚地：'+' → '.join(s['city'] for s in d['stops'])+'。提前停下后，网页会插入剩余转场，再连接后续出发点；比例拆分仅作估算。']
+        if d.get('mergeNext'):lines+=['可与下一天合并，宜州午休后去柳州。合并前核对实时导航与疲劳状况。']
+(root/'guide/daily-plan.md').write_text('\n\n'.join(lines)+'\n')
+rows=[]
+for mode,days in data['routes'].items():rows.append(f"| {names[mode]} | {len(days)} | {interval(total(days,'km'))} | {interval(total(days,'hours'))} | {sum(d['hotel'] for d in days)} |")
+text=f'''# 长沙出发 · 广西增程自驾使用说明
+
+数据整理于 {data['updated']}，北京时间。一个人，2022 款深蓝 SL03 增程版，纯电实际续航约 160 公里。以车宿为主、偶尔酒店，出发时间和旅行天数由你决定。
+
+[打开互动路书](https://mykite.github.io/guangxi-roadbook/) · [完整逐日参考](daily-plan.md)
+
+## 路线与天数
+
+| 路线 | 参考天数 | 逐日汇总公里 | 纯驾驶小时 | 酒店晚数 |
+|---|---:|---:|---:|---:|
+{chr(10).join(rows)}
+
+这些数值直接由逐日数据汇总，不是地图实测。参考 30 / 42 天用于展开行程；网页增删或合并后会重新计算。车时不含休息、充电、吃饭、游览和堵车。
+
+主要目的地是长沙 → 永州 → 桂林 → 兴坪 / 阳朔 → 柳州 → 南宁 → 北海 → 钦州 / 防城港 → 东兴 → 崇左 → 明仕 / 德天 → 靖西 → 百色 → 巴马 → 河池 / 宜州 → 柳州 → 桂林 → 永州 → 长沙。
+
+北海在钦州以东，去北海再沿海岸往西会有合理回折。国道版另有湖南县城、荔浦 / 鹿寨、来宾 / 宾阳、合浦、上思、德保、东兰等拆分点。多数承担驾驶拆分和补给，并非必游景点。纯电 160 公里不要求每 80—100 公里必须留宿。
+
+高速优先是长距离转场尽量用高速，景区间仍需普通公路。不走高速需在地图手动选择该偏好；“避免收费”是另一个选项，国省道也可能有收费。道路编号与捷径不作为强制导航，逐日核对实时路线、封路和天气。
+
+## 怎么调整才不会断开路线
+
+- 在“调整这段行程”里选实际落脚地。例如高速参考 D14 停在钦州，网页就把钦州 → 防城港作为新增转场日，再接防城港 → 东兴。中途拆分的里程使用粗略比例，总和仍保持原估算，实际以导航为准。
+- “多住一晚”在实际落脚点增加一天，后续日期、酒店/车宿晚数和预算同步变化。若尚未完成转场，停留日在剩余转场之前。
+- 仅同一次停留里的相邻同城日可交换游玩内容；日期、住宿安排保留。删去同城可选日会扣除该日游览里程，提前后续日期，可随时恢复。
+- 金城江 → 宜州与宜州 → 柳州提供合并选项。其他转场不自动合并，尤其国道累计车时较长时先查导航。
+- 打卡代表你标记完成，没有自动推断真实到达时间。改落脚地或交换游玩内容后，该段需重新确认打卡。旧版出发日期、路线和打卡会迁移，新旧数据分别保存。
+
+## 日期与天气
+
+页面使用北京时间显示当天日期。设置出发日后，每一页按调整后的顺序计算日期与预计返程日。
+
+天气按按钮查询 Open-Meteo 未来 7 天，显示地点、有效日期、获取时间、温度、降水和阵风。未设置出发日时明确显示近期天气，不能当作某个参考日预报。过去日期和 7 天之外的行程日不填充预测。读取失败时显示失败状态和官方入口。
+
+模式预报使用城镇近似中心坐标，不能代表山区、海面和整条路况。出发城市、目的地分别查看；每天早上与下午再核对沿途县区 24—72 小时预报、官方预警、交通管制和景区开放。天气变差时手动增加停留或更改落脚地，不自动替你决定开车。
+
+秋冬去桂北及返湘关注雨雾、降温与山路结冰风险；海边活动关注风浪，不把海滩、堤外安排为过夜地。长行程无法提前得到逐日可靠天气，越接近出发越需要滚动复核。
+
+## 预算口径
+
+网页用两条路线共同的参数计算。默认数值仅用于可修改的测算：餐饮 50 元/天、酒店 160 元/晚、车宿停车 15 元/晚、杂项 15 元/天、门票预留 500 元；纯电行驶占比 60%、电耗 22 kWh/100km、综合电价 1.2 元/kWh、用油里程油耗 6.5 L/100km、油价 7.5 元/L；车宿夜耗 6 kWh/晚。它们不是你的车的实测，也不是当天价格。
+
+行驶油电 = 总里程 × [纯电占比 × 电耗 ÷ 100 × 电价 + 用油占比 × 油耗 ÷ 100 × 油价]。车宿夜耗单独计算。高速通行费用计费里程占比 75%、每公里 0.5 元作占位，国道其他收费默认 0，可填实际预算。酒店和车宿晚数从行程生成，返家夜不算旅宿。
+
+同时展示当前计划与统一 30 天、5 晚酒店、24 晚车宿的测算，帮助区分多出天数的生活费与交通差异。两条原始路线的游览项目并非逐一完全相同，不能把比较结果当作严格相同旅程的报价。
+
+合计区间主要来自规划里程区间，另列加 10% 机动金；不含折旧、保险、维修和装备。用一周实测费用替换默认参数，比固定认为国道一定更省更可靠。
+
+## 补能与车宿
+
+白天用车辆支持的合适混动 / 保电设置；在饭点、采购、住店时补电。长转场不用为坚持纯电频繁停车。离开城市去明仕 / 硕龙前核实崇左或大新的充电，靖西近郊以城区补能为主。所有站点需看接口、功率、近期成功充电记录、开放时段与停车费用。
+
+每个城市可以保存主选与备用充电站、主选与备用夜宿点，并记录自己电话 / 现场核实的日期和备注。地图链接是搜索入口，不代表实时可用枪位或过夜许可。车宿候选应是允许人在车内过夜的正规地面场地，确认厕所夜间开放和车辆可随时离场；无合适点就酒店。
+
+2022 款 SL03 当前车机版本和露营模式逻辑尚未匹配核实。先在深蓝 App 或车机说明书查明：露营时增程器是否可能自动启动、低电量如何退出、是否需要手动锁门。不把行驶保电模式当作睡眠模式，不依赖睡眠中发动机自动启动兜底；这些条件未核实时安排酒店。
+
+试住记录室外温度、空调设置、睡前与起床电量、睡眠时长。睡前电量覆盖整晚实测耗电、次晨到下一充电点用量和余量，不统一规定必须充至某个百分比。不在地下车库或封闭空间开着发动机睡觉，不在车内烧炭或用燃气炉。睡眠不足、被褥潮湿或预警天气增加酒店。
+
+## 每天的执行顺序
+
+早上先看天气和路况，确认到哪里；中午吃饭兼补能，困了就休息；16 点起核实夜宿，尽量天黑前安顿；晚上记实际落脚、住宿方式与费用。需要改计划时直接操作对应那一天，避免只把日期后移却漏掉路段。
+
+## 保存与恢复
+
+网页无账号。计划保存在当前浏览器，可导出 JSON 备份、在另一设备导入；也能下载已调整的逐日 Markdown。备份含你手动填写的候选地点，请自行保管。清浏览器数据、换手机前先导出。在线天气需要网络，页面关闭后不会自动监测预警。
+
+## 信息来源与数据界限
+
+'''+ '\n'.join(f"- [{s['name']}]({s['url']})" for s in data['sources'])+'\n\n行程文字与里程是规划整理；未获取实时地图算路、停车许可、充电余位、当日酒店价格，也未确认你当前车机的过夜逻辑。\n'
+(root/'guide/overview.md').write_text(text)
+print(f"Built index.html ({len(shell.encode()):,} bytes) and two guides from 72 structured days")
